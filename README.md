@@ -19,7 +19,7 @@ A FastAPI web application gives security admins a single pane of glass to:
 - **Catalog** — browse available compliance frameworks and toggle them on or off
 - **Document Upload** — paste or upload a policy document (PDF, DOCX, Markdown); GPT-4o extracts enforceable code-level rules which the admin reviews and provisions in one click
 - **AI Assistant** — conversational advisor powered by GPT-4o, with all active rules in context; recommends frameworks, explains rules, and helps interpret violations
-- **Threat Intelligence** — automatically polls the CISA Known Exploited Vulnerabilities (KEV) catalog, matches CVEs against the project's tech stack, and generates proposed enforcement rules for admin review
+- **Threat Intelligence — automatically polls the CISA Known Exploited Vulnerabilities (KEV) catalog, matches CVEs against the project's tech stack, and generates proposed enforcement rules for admin review**
 
 ### Threat Intelligence Pipeline
 1. CISA KEV is polled on demand (or on a schedule)
