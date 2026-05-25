@@ -1,0 +1,124 @@
+rules:
+  # HIPAA-001: PHI in log statements
+  - id: hipaa-phi-in-logs
+    patterns:
+      - pattern-either:
+          - pattern: logging.$LEVEL(..., $PHI, ...)
+          - pattern: logging.$LEVEL(f"...{$PHI}...")
+          - pattern: logging.$LEVEL("..." + $PHI + "...")
+          - pattern: logger.$LEVEL(..., $PHI, ...)
+          - pattern: logger.$LEVEL(f"...{$PHI}...")
+          - pattern: print(..., $PHI, ...)
+          - pattern: print(f"...{$PHI}...")
+      - metavariable-regex:
+          metavariable: $PHI
+          regex: (?i).*(ssn|social_security|patient_id|patient_name|dob|date_of_birth|medical_record|mrn|diagnosis|prescription|phi|ehr|emr|health_record|insurance_id|medicare|medicaid).*
+    message: "HIPAA-001 [§164.312(b)]: PHI variable '$PHI' found in log/print statement. Remove PHI from logs."
+    languages: [python]
+    severity: ERROR
+
+  # HIPAA-002: PHI in exception messages
+  - id: hipaa-phi-in-exceptions
+    patterns:
+      - pattern-either:
+          - pattern: raise $EXC(f"...{$PHI}...")
+          - pattern: raise $EXC("..." + $PHI + "...")
+          - pattern: raise $EXC(..., $PHI, ...)
+      - metavariable-regex:
+          metavariable: $PHI
+          regex: (?i).*(ssn|social_security|patient_id|patient_name|dob|date_of_birth|medical_record|mrn|diagnosis|prescription|phi|ehr|emr|health_record|insurance_id|medicare|medicaid).*
+    message: "HIPAA-002 [§164.312(b)]: PHI variable '$PHI' found in exception message. Use a generic error message instead."
+    languages: [python]
+    severity: ERROR
+
+  # HIPAA-003: Hardcoded PHI values (SSN, MRN patterns)
+  - id: hipaa-hardcoded-phi
+    patterns:
+      - pattern: $VAR = "$VALUE"
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i).*(ssn|social_security|patient|mrn|dob|diagnosis|phi|ehr|emr|medical_record|insurance).*
+    message: "HIPAA-003 [§164.312(a)(2)(i)]: Possible hardcoded PHI in variable '$VAR'. Use environment variables or a secrets manager."
+    languages: [python]
+    severity: ERROR
+
+  # HIPAA-004: PHI written to file without encryption
+  - id: hipaa-unencrypted-phi-write
+    patterns:
+      - pattern: $F.write($PHI)
+      - metavariable-regex:
+          metavariable: $PHI
+          regex: (?i).*(ssn|social_security|patient|mrn|dob|diagnosis|phi|ehr|emr|medical_record|insurance).*
+    message: "HIPAA-004 [§164.312(a)(2)(iv)]: PHI variable '$PHI' written to file without apparent encryption. Encrypt PHI before writing to disk."
+    languages: [python]
+    severity: ERROR
+
+  # HIPAA-005: HTTP (not HTTPS) used for requests
+  - id: hipaa-http-phi-transmission
+    pattern-regex: '(requests\.(get|post|put|patch|delete)|urllib\.request\.urlopen)\s*\(\s*"http://'
+    message: "HIPAA-005 [§164.312(e)(2)(ii)]: Unencrypted HTTP request detected. Use HTTPS for all endpoints that may handle PHI."
+    languages: [python]
+    severity: ERROR
+
+  # HIPAA-006: Weak cryptography (MD5, SHA1) applied to PHI
+  - id: hipaa-weak-crypto-phi
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5($PHI)
+          - pattern: hashlib.sha1($PHI)
+          - pattern: hashlib.new("md5", $PHI)
+          - pattern: hashlib.new("sha1", $PHI)
+      - metavariable-regex:
+          metavariable: $PHI
+          regex: (?i).*(ssn|social_security|patient|mrn|dob|diagnosis|phi|ehr|emr|medical_record|insurance).*
+    message: "HIPAA-006 [§164.312(a)(2)(iv)]: Weak hashing algorithm used on PHI variable '$PHI'. Use SHA-256 or stronger (hashlib.sha256)."
+    languages: [python]
+    severity: ERROR
+
+  # HIPAA-007: PHI in URL query parameters
+  - id: hipaa-phi-in-url
+    patterns:
+      - pattern-either:
+          - pattern: "requests.get($URL, params={..., $KEY: $PHI, ...}, ...)"
+          - pattern: "requests.post($URL, params={..., $KEY: $PHI, ...}, ...)"
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i).*(ssn|social_security|patient|mrn|dob|diagnosis|phi|ehr|emr|medical_record|insurance).*
+    message: "HIPAA-007 [§164.312(e)(2)(ii)]: PHI key '$KEY' found in URL query parameters. Move PHI to encrypted request body instead."
+    languages: [python]
+    severity: WARNING
+
+  # HIPAA-008: PHI in code comments
+  - id: hipaa-phi-in-comments
+    pattern-regex: '#.*(ssn|social.security|patient_id|patient_name|mrn|date_of_birth|medical_record|insurance_id)\s*[=:]\s*\S+'
+    message: "HIPAA-008 [§164.312(b)]: PHI identifier pattern detected in comment. Remove real patient data from source code comments."
+    languages: [python]
+    severity: WARNING
+
+  # HIPAA-009: SQL injection risk with PHI (string formatting in queries)
+  - id: hipaa-sql-injection-phi
+    patterns:
+      - pattern-either:
+          - pattern: $DB.execute(f"...{$PHI}...")
+          - pattern: $DB.execute("..." % $PHI)
+          - pattern: $DB.execute("..." + $PHI + "...")
+          - pattern: $DB.execute("...".format(..., $PHI, ...))
+      - metavariable-regex:
+          metavariable: $PHI
+          regex: (?i).*(ssn|social_security|patient|mrn|dob|diagnosis|phi|ehr|emr|medical_record|insurance).*
+    message: "HIPAA-009 [§164.312(a)(1)]: PHI variable '$PHI' used in a dynamically constructed SQL query. Use parameterized queries to prevent SQL injection and unauthorized PHI access."
+    languages: [python]
+    severity: ERROR
+
+  # HIPAA-010: PHI stored in cookies
+  - id: hipaa-phi-in-cookie
+    patterns:
+      - pattern-either:
+          - pattern: $RESPONSE.set_cookie($KEY, $PHI, ...)
+          - pattern: $RESPONSE.set_cookie(..., value=$PHI, ...)
+      - metavariable-regex:
+          metavariable: $PHI
+          regex: (?i).*(ssn|social_security|patient|mrn|dob|diagnosis|phi|ehr|emr|medical_record|insurance).*
+    message: "HIPAA-010 [§164.312(a)(2)(iii)]: PHI variable '$PHI' stored in a cookie. Do not store PHI client-side."
+    languages: [python]
+    severity: WARNING

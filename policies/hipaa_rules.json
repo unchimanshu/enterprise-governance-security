@@ -1,0 +1,97 @@
+{
+  "framework": "HIPAA",
+  "version": "2024",
+  "description": "Technical safeguard rules derived from HIPAA Security Rule (45 CFR Part 164)",
+  "rules": [
+    {
+      "rule_id": "HIPAA-001",
+      "hipaa_reference": "45 CFR §164.312(b)",
+      "category": "Audit Controls",
+      "severity": "high",
+      "description": "PHI must not appear in log statements. Logging PHI creates unauthorized disclosure risk and violates audit control requirements.",
+      "developer_message": "Remove PHI from log statements. Use anonymized identifiers or patient IDs instead. See: https://your-org.com/security/phi-logging-policy",
+      "semgrep_rule_id": "hipaa-phi-in-logs"
+    },
+    {
+      "rule_id": "HIPAA-002",
+      "hipaa_reference": "45 CFR §164.312(b)",
+      "category": "Audit Controls",
+      "severity": "high",
+      "description": "PHI must not appear in exception or error messages. Error messages containing PHI may be exposed in stack traces, monitoring tools, or bug reports.",
+      "developer_message": "Remove PHI from exception messages. Raise generic errors and log details separately with proper access controls.",
+      "semgrep_rule_id": "hipaa-phi-in-exceptions"
+    },
+    {
+      "rule_id": "HIPAA-003",
+      "hipaa_reference": "45 CFR §164.312(a)(2)(i)",
+      "category": "Access Control",
+      "severity": "high",
+      "description": "PHI must not be hardcoded in source code. Hardcoded PHI is exposed to anyone with repository access and cannot be rotated.",
+      "developer_message": "Remove hardcoded PHI. Use environment variables, secrets managers (AWS Secrets Manager, HashiCorp Vault), or encrypted configuration files.",
+      "semgrep_rule_id": "hipaa-hardcoded-phi"
+    },
+    {
+      "rule_id": "HIPAA-004",
+      "hipaa_reference": "45 CFR §164.312(a)(2)(iv)",
+      "category": "Encryption at Rest",
+      "severity": "high",
+      "description": "PHI written to files or storage must be encrypted. Writing PHI in plaintext violates the encryption and decryption safeguard requirement.",
+      "developer_message": "Encrypt PHI before writing to disk. Use AES-256 or a secrets manager. Never write raw PHI to temp files or local storage.",
+      "semgrep_rule_id": "hipaa-unencrypted-phi-write"
+    },
+    {
+      "rule_id": "HIPAA-005",
+      "hipaa_reference": "45 CFR §164.312(e)(2)(ii)",
+      "category": "Transmission Security",
+      "severity": "high",
+      "description": "PHI must not be transmitted over unencrypted HTTP. All PHI in transit must use TLS (HTTPS).",
+      "developer_message": "Replace http:// with https:// for all endpoints that handle PHI. Enforce TLS 1.2 or higher.",
+      "semgrep_rule_id": "hipaa-http-phi-transmission"
+    },
+    {
+      "rule_id": "HIPAA-006",
+      "hipaa_reference": "45 CFR §164.312(a)(2)(iv)",
+      "category": "Encryption at Rest",
+      "severity": "high",
+      "description": "Weak hashing algorithms (MD5, SHA1) must not be used for PHI. These algorithms are cryptographically broken and do not meet HIPAA encryption standards.",
+      "developer_message": "Replace MD5/SHA1 with SHA-256 or stronger for any operation involving PHI. Use bcrypt or Argon2 for password hashing.",
+      "semgrep_rule_id": "hipaa-weak-crypto-phi"
+    },
+    {
+      "rule_id": "HIPAA-007",
+      "hipaa_reference": "45 CFR §164.312(e)(2)(ii)",
+      "category": "Transmission Security",
+      "severity": "medium",
+      "description": "PHI must not appear in URL query parameters. Query parameters are logged by web servers, proxies, and browsers, creating unauthorized disclosure risk.",
+      "developer_message": "Move PHI out of URL query strings. Use POST request bodies with encrypted payloads instead. Never include SSN, MRN, or patient identifiers in URLs.",
+      "semgrep_rule_id": "hipaa-phi-in-url"
+    },
+    {
+      "rule_id": "HIPAA-008",
+      "hipaa_reference": "45 CFR §164.312(b)",
+      "category": "Audit Controls",
+      "severity": "medium",
+      "description": "PHI must not appear in code comments. Comments are stored in source control and visible to all repository contributors.",
+      "developer_message": "Remove PHI from comments. Use synthetic or anonymized identifiers in code examples and documentation.",
+      "semgrep_rule_id": "hipaa-phi-in-comments"
+    },
+    {
+      "rule_id": "HIPAA-009",
+      "hipaa_reference": "45 CFR §164.312(a)(1)",
+      "category": "Access Control",
+      "severity": "high",
+      "description": "SQL queries involving PHI must use parameterized queries. String formatting or concatenation in SQL queries creates SQL injection risk, enabling unauthorized PHI access.",
+      "developer_message": "Use parameterized queries or ORM methods for all database operations involving PHI. Never use string formatting (%s, f-strings, .format()) to build SQL queries.",
+      "semgrep_rule_id": "hipaa-sql-injection-phi"
+    },
+    {
+      "rule_id": "HIPAA-010",
+      "hipaa_reference": "45 CFR §164.312(a)(2)(iii)",
+      "category": "Access Control",
+      "severity": "medium",
+      "description": "PHI must not be stored in browser cookies or client-side storage. Client-side storage is accessible to JavaScript and third-party scripts.",
+      "developer_message": "Do not store PHI in cookies, localStorage, or sessionStorage. Use server-side session management with encrypted, HttpOnly, Secure cookies for session tokens only.",
+      "semgrep_rule_id": "hipaa-phi-in-cookie"
+    }
+  ]
+}

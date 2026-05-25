@@ -1,0 +1,30 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Test cache
+.pytest_cache/
+.semgrep_cache/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs
+*.log
