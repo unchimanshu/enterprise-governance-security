@@ -11,6 +11,26 @@
 
 {% block content %}
 
+{% set _pending = get_pending_count() %}
+{% if _pending > 0 %}
+<div class="bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-center justify-between mb-6">
+  <div class="flex items-start gap-3">
+    <svg class="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+    </svg>
+    <div>
+      <p class="text-sm font-semibold text-orange-800">{{ _pending }} threat incident{{ 's' if _pending != 1 else '' }} pending your review</p>
+      <p class="text-xs text-orange-700 mt-0.5">Public CVEs have been matched to your stack and proposed as enforcement rules. Review them now.</p>
+    </div>
+  </div>
+  <a href="/incidents"
+     class="flex-shrink-0 text-xs font-semibold bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors ml-6">
+    Review Now →
+  </a>
+</div>
+{% endif %}
+
 <!-- Stat cards -->
 <div class="grid grid-cols-4 gap-5 mb-7">
 
@@ -32,11 +52,12 @@
     <p class="text-xs text-gray-400 mt-1">Warning — non-blocking today</p>
   </div>
 
-  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Categories</p>
-    <p class="text-3xl font-bold text-gray-900 mt-2">{{ by_category | length }}</p>
-    <p class="text-xs text-gray-400 mt-1">Compliance coverage areas</p>
-  </div>
+  <a href="/incidents"
+     class="bg-white rounded-xl border {% if _pending > 0 %}border-orange-200 bg-orange-50{% else %}border-gray-200{% endif %} px-5 py-4 block hover:border-indigo-300 transition-colors">
+    <p class="text-xs font-medium {% if _pending > 0 %}text-orange-600{% else %}text-gray-500{% endif %} uppercase tracking-wide">Threats Pending</p>
+    <p class="text-3xl font-bold {% if _pending > 0 %}text-orange-600{% else %}text-gray-900{% endif %} mt-2">{{ _pending }}</p>
+    <p class="text-xs text-gray-400 mt-1">CVEs matched to your stack</p>
+  </a>
 
 </div>
 

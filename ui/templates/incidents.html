@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Threat Intelligence · PolicyGuard{% endblock %}
+
+{% block page_header %}
+<div class="flex items-center gap-3">
+  <div>
+    <h1 class="text-sm font-semibold text-gray-900">Threat Intelligence</h1>
+    <p class="text-xs text-gray-400 mt-0.5">Public CVEs automatically matched to your tech stack</p>
+  </div>
+  {% if pending_count > 0 %}
+  <span class="inline-flex items-center gap-1 text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200 px-2.5 py-1 rounded-full">
+    {{ pending_count }} pending review
+  </span>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if pending_count > 0 %}
+<div class="bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-start gap-3 mb-6">
+  <svg class="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+  </svg>
+  <div>
+    <p class="text-sm font-semibold text-orange-800">{{ pending_count }} incident{{ 's' if pending_count != 1 else '' }} require your review</p>
+    <p class="text-xs text-orange-700 mt-0.5">
+      Public CVEs have been matched to your tech stack and translated into proposed enforcement rules.
+      Rules default to <strong>non-blocking (medium / warning)</strong> — review each one below.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<!-- Sync controls -->
+<div class="flex items-center justify-between mb-6">
+  <p class="text-xs text-gray-500">
+    {% if last_synced %}
+      Last synced {{ last_synced[:10] }} &middot;
+    {% else %}
+      Never synced &middot;
+    {% endif %}
+    Source: <a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank"
+               class="text-indigo-600 hover:underline">CISA Known Exploited Vulnerabilities</a>
+  </p>
+  <button onclick="syncNow()" id="sync-btn"
+          class="flex items-center gap-1.5 text-xs font-medium bg-white border border-gray-200 text-gray-700 px-3 py-2 rounded-lg hover:border-indigo-300 hover:text-indigo-700 transition-colors">
+    <svg id="sync-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+    </svg>
+    Sync Now
+  </button>
+</div>
+
+<!-- Pending review -->
+{% if pending %}
+<h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Pending Review</h2>
+<div class="space-y-4 mb-8">
+  {% for inc in pending %}
+  <div class="bg-white rounded-xl border border-orange-200 overflow-hidden" id="inc-{{ inc.id }}">
+
+    <!-- Card header -->
+    <div class="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="text-xs font-bold font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded flex-shrink-0">{{ inc.cve_id }}</span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-900 truncate">{{ inc.title }}</p>
+          <p class="text-xs text-gray-500 mt-0.5">
+            Affects <code class="bg-gray-100 px-1 rounded">{{ inc.affected_package }}</code>
+            &middot; {{ inc.published_date }}
+          </p>
+        </div>
+      </div>
+      <span class="text-xs font-semibold px-2.5 py-1 rounded flex-shrink-0
+        {% if inc.severity == 'high' %}bg-red-100 text-red-700
+        {% elif inc.severity == 'medium' %}bg-amber-100 text-amber-700
+        {% else %}bg-blue-100 text-blue-700{% endif %}">
+        CVE {{ inc.severity | upper }}
+      </span>
+    </div>
+
+    <!-- Description -->
+    <div class="px-6 py-3 border-b border-gray-100">
+      <p class="text-xs text-gray-600 leading-relaxed">{{ inc.description }}</p>
+    </div>
+
+    <!-- Proposed rule -->
+    <div class="px-6 py-4 bg-gray-50 border-b border-gray-100">
+      <div class="flex items-center gap-2 mb-3">
+        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Proposed Rule</p>
+        <span class="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">medium · non-blocking</span>
+      </div>
+      <div class="grid grid-cols-2 gap-x-8 gap-y-3">
+        <div>
+          <p class="text-xs text-gray-400 mb-0.5">Rule ID</p>
+          <p class="text-sm font-mono font-semibold text-gray-800">{{ inc.proposed_rule.rule_id }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400 mb-0.5">Category</p>
+          <p class="text-sm text-gray-800">{{ inc.proposed_rule.category }}</p>
+        </div>
+        <div class="col-span-2">
+          <p class="text-xs text-gray-400 mb-0.5">What it checks</p>
+          <p class="text-sm text-gray-700 leading-relaxed">{{ inc.proposed_rule.description }}</p>
+        </div>
+        <div class="col-span-2">
+          <p class="text-xs text-gray-400 mb-0.5">Developer guidance</p>
+          <p class="text-sm text-gray-700 leading-relaxed">{{ inc.proposed_rule.developer_message }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="px-6 py-3 flex items-center gap-3">
+      <button onclick="approveIncident('{{ inc.id }}')"
+              class="text-xs font-semibold bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors">
+        Approve as Warning
+      </button>
+      <button onclick="upgradeIncident('{{ inc.id }}')"
+              class="text-xs font-semibold bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors">
+        Upgrade to Blocking
+      </button>
+      <button onclick="rejectIncident('{{ inc.id }}')"
+              class="ml-auto text-xs font-semibold text-gray-400 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+        Reject
+      </button>
+    </div>
+
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="bg-white rounded-xl border border-gray-200 p-10 text-center mb-8">
+  <div class="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+    <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+    </svg>
+  </div>
+  <p class="text-sm font-semibold text-gray-700">No incidents pending review</p>
+  <p class="text-xs text-gray-400 mt-1">Click "Sync Now" to check for new public CVEs matching your stack.</p>
+</div>
+{% endif %}
+
+<!-- History -->
+{% if history %}
+<h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Review History</h2>
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+  <table class="w-full">
+    <thead>
+      <tr class="border-b border-gray-100 bg-gray-50">
+        <th class="text-xs font-semibold text-gray-500 px-6 py-3 text-left">CVE</th>
+        <th class="text-xs font-semibold text-gray-500 px-4 py-3 text-left">Package</th>
+        <th class="text-xs font-semibold text-gray-500 px-4 py-3 text-left">Rule ID</th>
+        <th class="text-xs font-semibold text-gray-500 px-4 py-3 text-left">Decision</th>
+        <th class="text-xs font-semibold text-gray-500 px-4 py-3 text-left">Reviewed</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-50">
+      {% for inc in history %}
+      <tr class="hover:bg-gray-50 transition-colors">
+        <td class="px-6 py-3 font-mono text-xs text-gray-700 font-semibold">{{ inc.cve_id }}</td>
+        <td class="px-4 py-3 text-xs text-gray-700">
+          <code class="bg-gray-100 px-1.5 py-0.5 rounded">{{ inc.affected_package }}</code>
+        </td>
+        <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ inc.proposed_rule.rule_id }}</td>
+        <td class="px-4 py-3">
+          {% if inc.status == 'approved' %}
+          <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Approved (Warning)</span>
+          {% elif inc.status == 'approved_blocking' %}
+          <span class="text-xs font-semibold px-2 py-0.5 rounded bg-red-100 text-red-700">Approved (Blocking)</span>
+          {% else %}
+          <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-500">Rejected</span>
+          {% if inc.get('reject_reason') %}
+          <span class="text-xs text-gray-400 ml-1">— {{ inc.reject_reason }}</span>
+          {% endif %}
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-xs text-gray-400">{{ inc.get('reviewed_at', '')[:10] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+async function syncNow() {
+  const btn = document.getElementById('sync-btn');
+  const icon = document.getElementById('sync-icon');
+  btn.disabled = true;
+  btn.querySelector('svg').style.animation = 'spin 1s linear infinite';
+  btn.childNodes[btn.childNodes.length - 1].textContent = ' Syncing…';
+
+  try {
+    const resp = await fetch('/api/incidents/fetch', { method: 'POST' });
+    const data = await resp.json();
+    if (resp.ok) {
+      if (data.new_incidents > 0) {
+        window.location.reload();
+      } else {
+        btn.disabled = false;
+        btn.querySelector('svg').style.animation = '';
+        btn.childNodes[btn.childNodes.length - 1].textContent = ' Sync Now';
+        showToast(`Stack is current — ${data.total_matched} known CVEs already tracked.`);
+      }
+    } else {
+      btn.disabled = false;
+      btn.querySelector('svg').style.animation = '';
+      btn.childNodes[btn.childNodes.length - 1].textContent = ' Sync Now';
+      alert(data.error || 'Sync failed.');
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.querySelector('svg').style.animation = '';
+    btn.childNodes[btn.childNodes.length - 1].textContent = ' Sync Now';
+    alert('Network error — is the server running?');
+  }
+}
+
+async function approveIncident(id) {
+  await doAction(id, 'approve', { blocking: false });
+}
+
+async function upgradeIncident(id) {
+  if (!confirm('Upgrade to blocking (high severity)? This will block PR merges when the rule triggers.')) return;
+  await doAction(id, 'approve', { blocking: true });
+}
+
+async function rejectIncident(id) {
+  const reason = prompt('Reason for rejection (optional):') || '';
+  await doAction(id, 'reject', { reason });
+}
+
+async function doAction(id, action, body) {
+  const card = document.getElementById('inc-' + id);
+  if (card) card.style.opacity = '0.5';
+
+  try {
+    const resp = await fetch(`/api/incidents/${id}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      window.location.reload();
+    } else {
+      alert(data.error || 'Action failed.');
+      if (card) card.style.opacity = '1';
+    }
+  } catch (e) {
+    alert('Network error.');
+    if (card) card.style.opacity = '1';
+  }
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'fixed bottom-6 right-6 bg-gray-900 text-white text-xs px-4 py-2.5 rounded-lg shadow-lg z-50';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+</script>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+{% endblock %}

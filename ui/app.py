@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +22,7 @@ app = FastAPI(title="PolicyGuard")
 
 _UI_DIR = Path(__file__).parent
 _POLICIES_DIR = _UI_DIR.parent / "policies"
+_PENDING_RULES_FILE = _POLICIES_DIR / "pending_rules.json"
 templates = Jinja2Templates(directory=str(_UI_DIR / "templates"))
 
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -123,6 +125,26 @@ def get_openai_client():
         return None
     from openai import OpenAI
     return OpenAI(api_key=api_key)
+
+
+def load_pending_rules() -> dict:
+    if not _PENDING_RULES_FILE.exists():
+        return {"last_synced": None, "incidents": []}
+    return json.loads(_PENDING_RULES_FILE.read_text())
+
+
+def save_pending_rules(data: dict) -> None:
+    _PENDING_RULES_FILE.write_text(json.dumps(data, indent=2))
+
+
+def get_pending_count() -> int:
+    try:
+        return sum(1 for i in load_pending_rules()["incidents"] if i["status"] == "pending")
+    except Exception:
+        return 0
+
+
+templates.env.globals["get_pending_count"] = get_pending_count
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -376,3 +398,172 @@ Be concise and actionable. Use markdown. When recommending frameworks, explain t
         return JSONResponse({"message": response.choices[0].message.content})
     except Exception as exc:
         return JSONResponse({"error": f"AI request failed: {exc}"}, status_code=500)
+
+
+# ── Threat Intelligence / Incidents ───────────────────────────────────────────
+
+@app.get("/incidents", response_class=HTMLResponse)
+def incidents_page(request: Request):
+    data = load_pending_rules()
+    all_incidents = data.get("incidents", [])
+    pending = [i for i in all_incidents if i["status"] == "pending"]
+    history = sorted(
+        [i for i in all_incidents if i["status"] != "pending"],
+        key=lambda x: x.get("reviewed_at", ""),
+        reverse=True,
+    )
+    return templates.TemplateResponse("incidents.html", {
+        "request": request,
+        "active_page": "incidents",
+        "pending": pending,
+        "history": history,
+        "last_synced": data.get("last_synced"),
+        "pending_count": len(pending),
+    })
+
+
+@app.post("/api/incidents/fetch")
+async def fetch_incidents():
+    from src.threat_intel import (
+        scan_stack, fetch_cisa_kev, match_against_stack,
+        generate_proposed_rule, send_incident_alert,
+    )
+
+    client = get_openai_client()
+    if client is None:
+        return JSONResponse({"error": "OPENAI_API_KEY not configured."}, status_code=503)
+
+    try:
+        stack = scan_stack()
+        kev_entries = fetch_cisa_kev()
+        matches = match_against_stack(kev_entries, stack)
+    except Exception as exc:
+        return JSONResponse({"error": f"Failed to fetch threat data: {exc}"}, status_code=500)
+
+    data = load_pending_rules()
+    existing_cves = {i["cve_id"] for i in data["incidents"]}
+
+    new_incidents: list[dict] = []
+    counter = len(data["incidents"]) + 1
+
+    for entry in matches:
+        cve_id = entry.get("cveID", "")
+        if cve_id in existing_cves:
+            continue
+
+        rule_id = f"INC-{counter:03d}"
+        try:
+            proposed_rule = generate_proposed_rule(entry, client, rule_id)
+        except Exception:
+            proposed_rule = {
+                "rule_id": rule_id,
+                "category": "Vulnerable Dependency",
+                "severity": "medium",
+                "description": f"Detected use of vulnerable package: {entry.get('product', 'unknown')}.",
+                "developer_message": f"See {cve_id} for remediation guidance.",
+                "hipaa_reference": "N/A",
+                "semgrep_rule_id": None,
+            }
+
+        incident: dict = {
+            "id": f"inc-{cve_id.lower()}",
+            "cve_id": cve_id,
+            "source": "cisa_kev",
+            "title": entry.get("vulnerabilityName", cve_id),
+            "description": entry.get("shortDescription", ""),
+            "affected_package": entry.get("product", ""),
+            "matched_package": entry.get("_matched_package", ""),
+            "severity": "high" if entry.get("knownRansomwareCampaignUse") == "Known" else "medium",
+            "published_date": entry.get("dateAdded", ""),
+            "proposed_rule": proposed_rule,
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        data["incidents"].append(incident)
+        new_incidents.append(incident)
+        existing_cves.add(cve_id)
+        counter += 1
+
+    data["last_synced"] = datetime.now(timezone.utc).isoformat()
+    save_pending_rules(data)
+
+    if new_incidents:
+        to_email = os.getenv("ALERT_EMAIL", "")
+        from_email = os.getenv("SMTP_FROM", "")
+        smtp_host = os.getenv("SMTP_HOST", "")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_user = os.getenv("SMTP_USER", "")
+        smtp_password = os.getenv("SMTP_PASSWORD", "")
+        if all([to_email, from_email, smtp_host, smtp_user, smtp_password]):
+            try:
+                send_incident_alert(
+                    new_incidents, to_email, from_email,
+                    smtp_host, smtp_port, smtp_user, smtp_password,
+                )
+            except Exception:
+                pass
+
+    return JSONResponse({"new_incidents": len(new_incidents), "total_matched": len(matches)})
+
+
+@app.post("/api/incidents/{inc_id}/approve")
+async def approve_incident(inc_id: str, request: Request):
+    body = await request.json()
+    blocking = body.get("blocking", False)
+
+    data = load_pending_rules()
+    incident = next((i for i in data["incidents"] if i["id"] == inc_id), None)
+    if incident is None:
+        return JSONResponse({"error": "Incident not found."}, status_code=404)
+    if incident["status"] != "pending":
+        return JSONResponse({"error": "Incident already reviewed."}, status_code=409)
+
+    rule = {**incident["proposed_rule"]}
+    if blocking:
+        rule["severity"] = "high"
+        incident["status"] = "approved_blocking"
+    else:
+        rule["severity"] = "medium"
+        incident["status"] = "approved"
+
+    incident["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+
+    custom_file = _POLICIES_DIR / "custom_rules.json"
+    if custom_file.exists():
+        existing = json.loads(custom_file.read_text())
+    else:
+        existing = {
+            "framework": "Custom",
+            "version": "1.0",
+            "description": "Custom rules uploaded and approved by admin.",
+            "rules": [],
+        }
+
+    used_ids = {r["rule_id"] for r in existing["rules"]}
+    if rule["rule_id"] in used_ids:
+        rule["rule_id"] = f"INC-{inc_id[-3:]}-AUTO"
+    existing["rules"].append(rule)
+    custom_file.write_text(json.dumps(existing, indent=2))
+    save_pending_rules(data)
+
+    return JSONResponse({"approved": inc_id, "severity": rule["severity"]})
+
+
+@app.post("/api/incidents/{inc_id}/reject")
+async def reject_incident(inc_id: str, request: Request):
+    body = await request.json()
+    reason = body.get("reason", "")
+
+    data = load_pending_rules()
+    incident = next((i for i in data["incidents"] if i["id"] == inc_id), None)
+    if incident is None:
+        return JSONResponse({"error": "Incident not found."}, status_code=404)
+    if incident["status"] != "pending":
+        return JSONResponse({"error": "Incident already reviewed."}, status_code=409)
+
+    incident["status"] = "rejected"
+    incident["reject_reason"] = reason
+    incident["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+    save_pending_rules(data)
+
+    return JSONResponse({"rejected": inc_id})
