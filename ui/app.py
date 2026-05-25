@@ -109,6 +109,8 @@ def load_all_rules() -> list[dict]:
     rules: list[dict] = []
     for json_file in sorted(_POLICIES_DIR.glob("*.json")):
         data = json.loads(json_file.read_text())
+        if "rules" not in data:
+            continue
         framework = data.get("framework", json_file.stem)
         for rule in data["rules"]:
             rules.append({**rule, "framework": framework})
